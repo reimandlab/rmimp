@@ -1,12 +1,15 @@
-BASE_DIR = system.file("extdata", "", package = "rmimp")
-library(parallel)
-library(mclust)
-library(ROCR)
-library(GenomicRanges)
-library(data.table)
-library(Biostrings)
+#'
+#' @import parallel
+#' @import mclust
+#' @import ROCR
+#' @import GenomicRanges
+#' @importFrom data.table rbindlist fread
+#' @import Biostrings
+NULL
 
-if(F){
+BASE_DIR = system.file("extdata", "", package = "rmimp")
+
+if (F){
   setwd('~/Desktop/Github/rmimp/')
   BASE_DIR = '~/Desktop/Github/rmimp/inst/extdata'
   source('R/display-functions.r')
