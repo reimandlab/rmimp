@@ -123,6 +123,7 @@ unfactor <- function(df){
 #' @param file (optional) the path to save the model
 #' @param threshold (optional) the minimum number of scores needed for each domain to train the model
 #' @param min.auc (optional) the minimum number of AUC needed for each domain to train the model
+#' @param priors Named character vector containing priors of amino acids.
 #' 
 #' @return a GMM model
 #' 

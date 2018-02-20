@@ -23,6 +23,8 @@ trainModel(pos.dir, neg.dir, kinase.domain = F, cores = 2, file = NULL,
 \item{threshold}{(optional) the minimum number of scores needed for each domain to train the model}
 
 \item{min.auc}{(optional) the minimum number of AUC needed for each domain to train the model}
+
+\item{priors}{Named character vector containing priors of amino acids.}
 }
 \value{
 a GMM model
