@@ -724,10 +724,99 @@ computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.th
   return(predicted)
 }
 
-#' Predict the impact of single variants on phosphorylation.
+
+bi_argument_identity <- function(a, b) {
+    c(a, b)
+}
+#' Raw mimp
+.mimp <- function(
+  muts, seqs, model_path_object, get_mutated_sites, score_closure,
+  description='', filter=bi_argument_identity, display.results=T,
+  domain='phos'
+){
+  # Constant, don't change
+  flank = 7
+  
+  # Read in seq and mutation data
+  seqdata = .readSequenceData(seqs)
+  md = .readMutationData(muts, seqdata)
+  
+  list[seqdata, md] = filter(seqdata, md)
+  
+  # Validate that mutations map to the correct residue
+  .validateMutationMapping(md, seqdata)
+  
+  # If we have nothing left, throw a warning and return NULL
+  if (nrow(md) == 0 | length(seqdata) == 0) {
+    warning('No mutation or sequence data remaining after filtering!')
+    return(NULL)
+  }
+  
+  # Get data
+  cat('\r.... | loading specificity models')
+  model.data = model_path_object$id
+  mdata = readRDS(model_path_object$path)
+  cat('\rdone\n')
+  
+  mut_sites = get_mutated_sites(md, seqdata, mdata, flank)
+  
+  # If no mutations map, throw warning and return NULL
+  if (length(mut_sites) == 0) {
+    warning('No SNVs were found!')
+    return(NULL)
+  }
+  
+  message('Computing ', description)
+  
+  scoring_function = score_closure(mdata, mut_sites)
+  
+  scored <- if (requireNamespace("pbapply", quietly = TRUE)) {
+    pbapply::pblapply(1:length(mdata), scoring_function)
+  } else {
+    lapply(1:length(mdata), scoring_function)
+  }
+  
+  cat('\rdone | predicting', description, 'events\n')
+
+  # Check if we have any data left
+  scored = scored[!sapply(scored, is.null)]
+  if(length(scored) == 0) {
+    warning(sprintf("No %s event found, returning NULL", description))
+    return(NULL)
+  }
+
+  # Merge all data frames
+  scored_final = rbindlist(scored)
+  scored_final = scored_final[order(prob, decreasing = T),]
+  scored_final = as.data.frame(scored_final)
+  
+  attr(scored_final, 'model.data') = model.data
+  
+  if (display.results & model.data == "custom") {
+    warning("cannot generate HTML when using custom model.")
+  } else if (display.results) {
+    results2html(scored_final, domain = domain)
+  }
+
+  # Remove useless columns, reset attributes and return
+  cat(sprintf('\rdone | analysis complete with a total of %s %s events\a\n', nrow(scored_final), description))
+  scored_final = scored_final[,!names(scored_final) %in% c('ref_aa', 'alt_aa', 'mut_pos')]
+  attr(scored_final, 'model.data') = model.data
+
+  return(scored_final)
+} 
+
+.ensure_valid_thresholds <- function(prob.thresh){
+  # Ensure valid thresholds
+  if (!is.numeric(prob.thresh) | prob.thresh > 1 | prob.thresh < 0)
+    stop('Probability threshold "prob.thresh" must be between 0.5 and 1')
+}
+
+
+#' Predict the impact of single variants on a PTM site.
 #'
-#' This function takes in mutation, sequence and phosphorylation data to predict the
-#' impact the mutation has on phosphorylation.
+#' This function takes in mutation, sequence and PTM data to predict the
+#' impact the mutation has on the post-translational modification.
 #'
 #' @param muts Mutation data file: a space delimited text file OR data frame containing two columns (1) gene and (1) mutation.
 #' Example:
@@ -739,15 +828,12 @@ computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.th
 #' @param seqs Sequence data file containing protein sequences in FASTA format OR
 #'  named list of sequences where each list element is the uppercase sequence and the
 #'  name of each element is that of the protein. Example: list(GENEA="ARNDGH", GENEB="YVRRHS")
-#' @param central Whether the mutation site is at the central residue of the sequence
-#' @param domain Which binding domain to run mimp for
-#' @param psites Phosphorylation data file (optional): a space delimited text file OR data frame containing  two columns (1) gene and (1) positions of phosphorylation sites. Example:
+#' @param sites PTM sites data file: a space delimited text file OR data frame containing  two columns (1) gene and (1) positions of PTM sites. Example:
 #' \tabular{ll}{
 #'    TP53 \tab 280\cr
 #'    CTNNB1 \tab 29\cr
 #'    CTNNB1 \tab 44\cr
 #' }
-#' @param terminal.range The number of amino acids used for predicting terminal domain binding.
 #' @param prob.thresh Probability threshold of gains and losses. This value should be between 0.5 and 1.
 #' @param log2.thresh Threshold for the absolute value of log ratio between wild type and mutant scores. Anything less than this value is discarded (default: 1).
 #' @param display.results If TRUE results are visualised in an html document after analysis is complete
@@ -758,27 +844,27 @@ computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.th
 #' The data is returned in a \code{data.frame} with the following columns:
 #' \item{gene}{Gene with the rewiring event}
 #' \item{mut}{Mutation causing the rewiring event}
-#' \item{psite_pos}{(Optional) Position of the phosphosite, if domain = "phos"}
-#' \item{mut_dist}{(Optional) Distance of the mutation relative to the central residue, if domain = "phos"}
+#' \item{psite_pos}{Position of the phosphosite}
+#' \item{mut_dist}{Distance of the mutation relative to the central residue}
 #' \item{wt}{Sequence of the wildtype phosphosite (before the mutation). Score is NA if the central residue is not S, T or Y}
 #' \item{mt}{Sequence of the mutated phosphosite (after the mutation). Score is NA if the central residue is not S, T or Y}
 #' \item{score_wt}{Matrix similarity score of the wildtype phosphosite}
 #' \item{score_mt}{Matrix similarity score of the mutated phosphosite}
 #' \item{log_ratio}{Log2 ratio between mutant and wildtype scores. A high positive log ratio represents a high confidence gain-of-phosphorylation event. A high negative log ratio represents a high confidence loss-of-phosphorylation event. This ratio is NA for mutations that affect the central phosphorylation sites}
 #' \item{pwm}{Name of the kinase being rewired}
-#' \item{pwm_fam}{(Optional, available only if domain = "phos") Family/subfamily of kinase being rewired. If a kinase subfamily is available the family and subfamily will be separated by an underscore e.g. "DMPK_ROCK". If no subfamily is available, only the family is shown e.g. "GSK"}
-#' \item{nseqs}{(Optional, available only if domain = "phos") Number of sequences used to construct the PWM. PWMs constructed with a higher number of sequences are generally considered of better quality.}
+#' \item{pwm_fam}{Family/subfamily of kinase being rewired. If a kinase subfamily is available the family and subfamily will be separated by an underscore e.g. "DMPK_ROCK". If no subfamily is available, only the family is shown e.g. "GSK"}
+#' \item{nseqs}{Number of sequences used to construct the PWM. PWMs constructed with a higher number of sequences are generally considered of better quality.}
 #' \item{prob}{Joint probability of wild type sequence belonging to the foreground distribution and mutated sequence belonging to the background distribution, for loss and vice versa for gain.}
 #' \item{effect}{Type of rewiring event, can be "loss" or "gain"}
 #'
-#' @keywords mimp psites mutation snp snv pwm rewiring phosphorylation kinase sh3 pdz
+#' @keywords mimp sites mutation snp snv pwm rewiring phosphorylation kinase
 #' @export
 #' @examples
 #' # Get the path to example mutation data
-#' mut.file = system.file("extdata", "mutation_data.txt", package = "rmimp")
+#' mut.file = system.file("extdata", "sample_muts.tab", package = "rmimp")
 #'
 #' # Get the path to example FASTA sequence data
-#' seq.file = system.file("extdata", "sequence_data.txt", package = "rmimp")
+#' seq.file = system.file("extdata", "sample_seqs.fa", package = "rmimp")
 #'
 #' # View the files in a text editor
 #' browseURL(mut.file)
@@ -789,161 +875,189 @@ computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.th
 #'
 #' # Show head of results
 #' head(results)
-mimp <- function(muts, seqs, central=T, domain="phos", species = "human", 
-                 psites=NULL, terminal.range=5, prob.thresh=0.5, log2.thresh=1, display.results=T, include.cent=F, model.data='hconf'){
-  # Constant, don't change
-  flank = 7
+#' 
+site_mimp <- function(muts, seqs, site_type="phos", species="human",
+                      sites=NULL, prob.thresh=0.5, log2.thresh=1,
+                      display.results=T, include.cent=F, model.data='hconf'){
+  .ensure_valid_thresholds(prob.thresh)
   
-  # Ensure valid domain
-  if (central) {
-    valid.domains <- .VALID_DOMAINS$central
-  } else {
-    valid.domains <- .VALID_DOMAINS$not_central
+  if (species != "human") {
+    stop("Species must be valid. Please check MIMP documentation for a list of valid species")
   }
+  
+  path_object = .getModelDataPath(model.data, domain = site_type, species = species)
+  
+  filter = function(seqdata, md)
+  {
+    # Read in sites data
+    sites_data = .readPsiteData(sites, seqdata)
+    if (nrow(sites_data) == 0) {
+      warning('No sites data!')
+      return(NULL)
+    }
+    
+    # Keep only genes we have data for
+    limit_to_genes = sites_data$gene
+    md = md[md$gene %in% limit_to_genes,]
+    seqdata = seqdata[names(seqdata) %in% limit_to_genes]
+    
+    if (site_type == 'phos') {
+      # Ensure psite positions map to an S, T or Y
+      .validatePsitesSTY(sites_data, seqdata)
+    }
+    
+    c(seqdata, md)
+  }
+  
+  get_mut_sites <- function(md, seqdata, mdata, flank) {
+    # Get mutations in flanking regions of sites
+    mut_sites = pSNVs(md, sites_data, seqdata, flank)
+    # Are we keeping central residues?
+    if (!include.cent) mut_sites = mut_sites[mut_sites$mut_dist != 0,]
+    mut_sites
+  }
+  
+  
+  score_closure = function(mdata, mut_sites)
+  {
+    score <- function(i) {
+      obj = mdata[[i]]
+      computeRewiring(obj, mut_sites, prob.thresh, log2.thresh, include.cent)
+    }
+    return(score)
+  }
+  
+  .mimp(
+    muts, seqs, path_object, get_mut_sites, score_closure,
+    description = .DESCRIPTIONS[site_type], filter = filter,
+    display.results = display.results
+  )
+}
 
+#' Helper function for domain mimp
+terminal_mut_sites_getter = function(terminal.range)
+{
+  get_terminal_domain_mut_sites = function(md, seqdata, mdata, flank){
+      # Get wt and mut sequences
+      pwms <- lapply(mdata, function(obj) return(obj$pwm))
+      mut_sites <- lapply(terminal.range, tSNVs, md = md, seqdata = seqdata)
+      names(mut_sites) <- terminal.range
+      mut_sites
+  }
+  get_terminal_domain_mut_sites
+}
+
+#' Helper function for domain mimp
+get_domain_mut_sites = function(md, seqdata, mdata, flank) {
+    # Get wt and mut sequences
+    pwms <- lapply(mdata, function(obj) return(obj$pwm))
+    flank <- unique(unlist(sapply(pwms, ncol), use.names = F))
+    mut_sites <- lapply(flank, SNVs, md = md, seqdata = seqdata)
+    names(mut_sites) <- flank
+    mut_sites
+}
+
+#' Predict the impact of single variants on domains.
+#'
+#' This function takes in mutation, sequence and phosphorylation data to predict the
+#' impact the mutation has on domains.
+#'
+#' @param muts Mutation data file: a space delimited text file OR data frame containing two columns (1) gene and (1) mutation.
+#' Example:
+#' \tabular{ll}{
+#'    TP53 \tab R282W\cr
+#'    CTNNB1 \tab S33C\cr
+#'    CTNNB1 \tab S37F\cr
+#' }
+#' @param seqs Sequence data file containing protein sequences in FASTA format OR
+#'  named list of sequences where each list element is the uppercase sequence and the
+#'  name of each element is that of the protein. Example: list(GENEA="ARNDGH", GENEB="YVRRHS")
+#' @param domain Which binding domain to run mimp for
+#' @param terminal.range The number of amino acids used for predicting terminal domain binding.
+#' @param prob.thresh Probability threshold of gains and losses. This value should be between 0.5 and 1.
+#' @param log2.thresh Threshold for the absolute value of log ratio between wild type and mutant scores. Anything less than this value is discarded (default: 1).
+#' @param display.results If TRUE results are visualised in an html document after analysis is complete
+#' @param model.data Name of specificity model data to use, can be "hconf" : individual experimental kinase specificity models used to scan for rewiring events. For experimental kinase specificity models, grouped by family, set to "hconf-fam". Both are considered high confidence. For lower confidence predicted specificity models , set to "lconf". NOTE: Predicted models are purely speculative and should be used with caution
+#'
+#' @return
+#' The data is returned in a \code{data.frame} with the following columns:
+#' \item{gene}{Gene with the rewiring event}
+#' \item{mut}{Mutation causing the rewiring event}
+#' \item{wt}{Sequence of the wildtype phosphosite (before the mutation). Score is NA if the central residue is not S, T or Y}
+#' \item{mt}{Sequence of the mutated phosphosite (after the mutation). Score is NA if the central residue is not S, T or Y}
+#' \item{score_wt}{Matrix similarity score of the wildtype phosphosite}
+#' \item{score_mt}{Matrix similarity score of the mutated phosphosite}
+#' \item{log_ratio}{Log2 ratio between mutant and wildtype scores. A high positive log ratio represents a high confidence gain-of-phosphorylation event. A high negative log ratio represents a high confidence loss-of-phosphorylation event. This ratio is NA for mutations that affect the central phosphorylation sites}
+#' \item{pwm}{Name of the kinase being rewired}
+#' \item{prob}{Joint probability of wild type sequence belonging to the foreground distribution and mutated sequence belonging to the background distribution, for loss and vice versa for gain.}
+#' \item{effect}{Type of rewiring event, can be "loss" or "gain"}
+#'
+#' @keywords mimp psites mutation snp snv pwm rewiring phosphorylation kinase sh3 pdz
+#' @export
+#' @examples
+#' # Get the path to example mutation data
+#' mut.file = system.file("extdata", "sample_muts.tab", package = "rmimp")
+#'
+#' # Get the path to example FASTA sequence data
+#' seq.file = system.file("extdata", "sample_seqs.fa", package = "rmimp")
+#'
+#' # View the files in a text editor
+#' browseURL(mut.file)
+#' browseURL(seq.file)
+#'
+#' # Run rewiring analysis
+#' results = domain_mimp(mut.file, seq.file, display.results=TRUE)
+#'
+#' # Show head of results
+#' head(results)
+domain_mimp <- function(muts, seqs, domain="sh2", species="human",
+                        terminal.range=5, prob.thresh=0.5, log2.thresh=1,
+                        display.results=T, model.data='hconf'){
+  .ensure_valid_thresholds(prob.thresh)
+
+  valid.domains <- .VALID_DOMAINS$not_central
+    
   if (!is.element(domain, valid.domains)) {
     stop("Domain must be valid. Please check MIMP documentation for a list of valid domains")
   }
   
   # Ensure valid species
   if (!is.element(species, .VALID_SPECIES[[domain]])) {
-    stop("Species must be valid. Please check MIMP documentation for a list of valid domains")
+    stop("Species must be valid. Please check MIMP documentation for a list of valid species")
+  }
+
+  path_object = .getModelDataPath(model.data, domain = domain, species = species)
+  
+  
+  if (domain %in% .TERMINAL_DOMAINS) {
+    select_mut_sites = terminal_mut_sites_getter(terminal.range)
+  } else {
+    select_mut_sites = get_domain_mut_sites
   }
   
-  # Ensure valid thresholds
-  if(!is.numeric(prob.thresh) | prob.thresh > 1 | prob.thresh < 0) stop('Probability threshold "prob.thresh" must be between 0.5 and 1')
-
-  # Read in seq and mutation data
-  seqdata = .readSequenceData(seqs)
-  md = .readMutationData(muts, seqdata)
-
-  if (central) {
-    # Read in phos site data
-    pd = .readPsiteData(psites, seqdata)
-    if (nrow(pd) == 0) {
-      warning('No phosphorylation data!')
-      return(NULL)
-    }
-
-    # Keep only genes we have data for
-    md = md[md$gene %in% pd$gene,]
-    seqdata = seqdata[names(seqdata) %in% pd$gene]
-  }
-  
-  # Validate that mutations mapp to the correct residue
-  .validateMutationMapping(md, seqdata)
-
-  # If we have nothing left, throw a warning and return NULL
-  if(nrow(md) == 0 | length(seqdata) == 0){
-    warning('No mutation or sequence data remaining after filtering!')
-    return(NULL)
-  }
-
-  # Get data
-  cat('\r.... | loading specificity models')
-  mpath = .getModelDataPath(model.data, domain = domain, species = species)
-  model.data = mpath$id
-  mdata = readRDS(mpath$path)
-  cat('\rdone\n')
-
-  if (central) {
-    # Ensure psite positions map to an S, T or Y
-    .validatePsitesSTY(pd, seqdata)
-
-    # Get mutations in flanking regions of psites
-    mut_sites = pSNVs(md, pd, seqdata, flank)
-
-    # Are we keeping central residues?
-    if(!include.cent) mut_sites = mut_sites[mut_sites$mut_dist != 0,]
-
-    # If no mutations map, throw warning and return NULL
-    if(nrow(mut_sites) == 0){
-      warning('No pSNVs were found!')
-      return(NULL)
-    }
-  } else if (domain %in% .TERMINAL_DOMAINS) {
-    # Get wt and mut sequences
-    pwms <- lapply(mdata, function(obj) return(obj$pwm))
-    mut_sites <- lapply(terminal.range, tSNVs, md = md, seqdata = seqdata)
-    names(mut_sites) <- terminal.range
-    
-    # If no mutations map, throw warning and return NULL
-    if(length(mut_sites) == 0){
-      warning('No tSNVs were found!')
-      return(NULL)
-    }
-  } else {
-    # Get wt and mut sequences
-    pwms <- lapply(mdata, function(obj) return(obj$pwm))
-    flank <- unique(unlist(sapply(pwms, ncol), use.names = F))
-    mut_sites <- lapply(flank, SNVs, md = md, seqdata = seqdata)
-    names(mut_sites) <- flank
-
-    # If no mutations map, throw warning and return NULL
-    if(length(mut_sites) == 0){
-      warning('No SNVs were found!')
-      return(NULL)
-    }
-  }
-
-  if (central) {
-    scored = lapply(1:length(mdata), function(i){
-      # Processing PWM i
-      obj = mdata[[i]]
-
-      # Print msg
-      perc = round((i/length(mdata))*100)
-      cat(sprintf('\r%3d%% | predicting %s events', perc, .DESCRIPTIONS[domain]))
-
-      computeRewiring(obj, mut_sites, prob.thresh, log2.thresh, include.cent)
-    })
-  } else {
-    # Score sequences
-    scored = lapply(1:length(mdata), function(i){
+  # Score sequences
+  score_closure = function(mdata, mut_sites)
+  {
+    score = function(i){
       # Processing PWM i
       obj = mdata[[i]]
       obj$pwm_name <- names(mdata[i]) 
       pwm_ncol <- as.character(ncol(obj$pwm))
-
-      # Print msg
-      perc = round((i/length(mdata))*100)
-      cat(sprintf('\r%3d%% | predicting %s events', perc, .DESCRIPTIONS[domain]))
     
       # If terminal domains, mut locations are defined in the mut_sites
       mut_location = attr(mut_sites[[pwm_ncol]], "mutLoc")
       computeBinding(obj, mut_sites[[pwm_ncol]], mut_location, prob.thresh, log2.thresh)
-    })
+    }
+    score
   }
   
-  cat('\rdone | predicting', .DESCRIPTIONS[[domain]], 'events\n')
-
-  # Check if we have any data left
-  scored = scored[!sapply(scored, is.null)]
-  if(length(scored) == 0){
-    warning(sprintf("No %s event found, returning NULL", .DESCRIPTIONS[domain]))
-    return(NULL)
-  }
-
-  # Merge all data frames
-  scored_final = rbindlist(scored)
-  scored_final = scored_final[order(prob, decreasing=T),]
-  scored_final = as.data.frame(scored_final)
-  
-  attr(scored_final, 'model.data') = model.data
-  
-  if(display.results & model.data == "custom") {
-    warning("cannot generate HTML when using custom model.")
-  } else if (display.results) {
-    results2html(scored_final, domain = domain)
-  }
-
-  # Remove useless columns, reset attributes and return
-  cat(sprintf('\rdone | analysis complete with a total of %s %s events\a\n', nrow(scored_final), .DESCRIPTIONS[domain]))
-  scored_final = scored_final[,!names(scored_final) %in% c('ref_aa', 'alt_aa', 'mut_pos')]
-  attr(scored_final, 'model.data') = model.data
-
-  return(scored_final)
+  .mimp(
+    muts, seqs, path_object, select_mut_sites, score_closure,
+    description = .DESCRIPTIONS[domain], domain = domain,
+    display.results = display.results
+  )
 }
+
 
 #' Compute posterior probability of wild type phosphosites for kinases
 #'
