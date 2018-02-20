@@ -249,28 +249,44 @@ scoreArrayRolling <- function(seqs, pwm){
 #' @param na_rm Remove NA scores?
 #' @param ignore_cent If TRUE, central residue is ignore from scoring.
 #' @param kinase.domain Whether the domain to be trained is a kinase domain.
+#' @param residues_groups a vector of regular expressions used to group kinases by central residue they target;
+#' if a sequence does not have a central residue matching a group chosen from modified.residues by the algorithm
+#' (based on PWM), the sequence will be discarded.
 #'  
 #' @keywords pwm mss match tfbs
 #' 
 #' @keywords internal
 #' @examples
 #' # No Examples
-mss <- function(seqs, pwm, na_rm=F, ignore_cent=T, kinase.domain = T){
+mss <- function(seqs, pwm, na_rm=F, ignore_cent=T, kinase.domain = T, residues_groups = c('S|T', 'Y')){
   # If not kinase domain, use non-central MSS instead
   if (!kinase.domain) {
     return(.mssNonCentral(seqs, pwm))
   }
   
-  cent_ind = ceiling(ncol(pwm)/2)
+  # Central residue index
+  central_index = ceiling(ncol(pwm)/2)
+  
   # Only score sequences which have a central residue S/T or Y depending on the PWM
-  kinase_type = names(which.max(pwm[,cent_ind]))
-  kinase_type = ifelse(grepl('S|T', kinase_type), 'S|T', 'Y')
+  
+  # Take the aminoacid with the heaviest weight at the central position
+  heaviest_central_residue = names(which.max(pwm[,central_index]))
+  
+  # Kinases are considered to be of the same type
+  # if they modify the same group of residues.
+
+  # Knowing the most frequently modified residue (from PWM),
+  # choose the kinase type (=residues group) that matches the residue.
+  for (residue_group in residues_groups) {
+    if (grepl(residue_group, heaviest_central_residue)) {
+      kinase_type = residue_group
+    }
+  }
+  
   central_res = kinase_type
   
-  # Central residue index
-  central_ind = NA
-  if(ignore_cent)
-    central_ind = ceiling(ncol(pwm)/2)
+  if (!ignore_cent)
+    central_index = NA
   
   # Info content
   ic = attr(pwm, 'match.ic')
@@ -283,7 +299,7 @@ mss <- function(seqs, pwm, na_rm=F, ignore_cent=T, kinase.domain = T){
                                ignore_cent = ignore_cent)
   
   # Get array of scores
-  keep_scores = grepl(central_res, substr(seqs, central_ind, central_ind))
+  keep_scores = grepl(central_res, substr(seqs, central_index, central_index))
   
   # Score only ones we're keeping
   scores = rep(NA, length(seqs))

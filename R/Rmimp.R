@@ -124,6 +124,9 @@ unfactor <- function(df){
 #' @param threshold (optional) the minimum number of scores needed for each domain to train the model
 #' @param min.auc (optional) the minimum number of AUC needed for each domain to train the model
 #' @param priors Named character vector containing priors of amino acids.
+#' @param residues_groups a vector of regular expressions used to group kinases by central residue they target;
+#' if a sequence does not have a central residue matching a group chosen from modified.residues by the algorithm
+#' (based on PWM), the sequence will be discarded.
 #' 
 #' @return a GMM model
 #' 
@@ -132,7 +135,8 @@ unfactor <- function(df){
 #' 
 #' @export
 trainModel <- function(pos.dir, neg.dir, kinase.domain = F,
-                       cores = 2, file = NULL, threshold = 10, min.auc = 0.65, priors){
+                       cores = 2, file = NULL, threshold = 10, min.auc = 0.65, priors,
+                       residues_groups = c('S|T', 'Y')){
   # Get a list of files from pos.dir and neg.dir
   # and check if the corresponding files exists
   fileNames <- intersect(list.files(path = c(pos.dir), full.names = F), list.files(path = c(neg.dir), full.names = F))
@@ -189,11 +193,11 @@ trainModel <- function(pos.dir, neg.dir, kinase.domain = F,
     pwm <- PWM(pos.seqs, is.kinase.pwm = F, priors = priors, do.pseudocounts = T)
 
     # Score the positive and negative seqs with the PWM
-    pos.scores <- unlist(mss(pos.seqs, pwm, kinase.domain = kinase.domain))
-    neg.scores <- unlist(mss(neg.seqs, pwm, kinase.domain = kinase.domain))
+    pos.scores <- unlist(mss(pos.seqs, pwm, kinase.domain = kinase.domain, residues_groups = residues_groups))
+    neg.scores <- unlist(mss(neg.seqs, pwm, kinase.domain = kinase.domain, residues_groups = residues_groups))
     
     # Check if both pos and neg have more scores than THRESHOLD
-    if (any(c(nrow(pos.scores), nrow(neg.scores)) < threshold)) {
+    if (any(c(nrow(pos.scores), nrow(neg.scores)) < threshold) || is.null(pos.scores) || is.null(neg.scores)) {
       warning(binding.site, " skipped as at least ", threshold, " scores required for trainning.")
       return(NULL)
     }

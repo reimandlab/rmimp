@@ -7,7 +7,7 @@ and return as a list to be used later. If file is passed,
 the model will also be save to a .mimp file.}
 \usage{
 trainModel(pos.dir, neg.dir, kinase.domain = F, cores = 2, file = NULL,
-  threshold = 10, min.auc = 0.65, priors)
+  threshold = 10, min.auc = 0.65, priors, residues_groups = c("S|T", "Y"))
 }
 \arguments{
 \item{pos.dir}{the path to the directory contains positive entries}
@@ -25,6 +25,10 @@ trainModel(pos.dir, neg.dir, kinase.domain = F, cores = 2, file = NULL,
 \item{min.auc}{(optional) the minimum number of AUC needed for each domain to train the model}
 
 \item{priors}{Named character vector containing priors of amino acids.}
+
+\item{residues_groups}{a vector of regular expressions used to group kinases by central residue they target;
+if a sequence does not have a central residue matching a group chosen from modified.residues by the algorithm
+(based on PWM), the sequence will be discarded.}
 }
 \value{
 a GMM model

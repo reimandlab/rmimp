@@ -4,7 +4,8 @@
 \alias{mss}
 \title{Compute matrix similarity score as described in MATCH algorithm}
 \usage{
-mss(seqs, pwm, na_rm = F, ignore_cent = T, kinase.domain = T)
+mss(seqs, pwm, na_rm = F, ignore_cent = T, kinase.domain = T,
+  residues_groups = c("S|T", "Y"))
 }
 \arguments{
 \item{seqs}{Sequences to be scored}
@@ -16,6 +17,10 @@ mss(seqs, pwm, na_rm = F, ignore_cent = T, kinase.domain = T)
 \item{ignore_cent}{If TRUE, central residue is ignore from scoring.}
 
 \item{kinase.domain}{Whether the domain to be trained is a kinase domain.}
+
+\item{residues_groups}{a vector of regular expressions used to group kinases by central residue they target;
+if a sequence does not have a central residue matching a group chosen from modified.residues by the algorithm
+(based on PWM), the sequence will be discarded.}
 }
 \description{
 Computes matrix similarity score of a PWM with a k-mer.
