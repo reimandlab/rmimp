@@ -12,7 +12,7 @@ AA_PRIORS_WORM   =   c(A=0.066, R=0.053, N=0.048, D=0.055, C=0.020, Q=0.043, E=0
                        L=0.084, K=0.063, M=0.026, F=0.044, P=0.051, S=0.082, T=0.059, W=0.011, Y=0.030, V=0.062)
 
 #' @export
-PRIORS           =   c(human=AA_PRIORS_HUMAN, yeast=AA_PRIORS_YEAST, fly=AA_PRIORS_FLY, mouse=AA_PRIORS_MOUSE,
+PRIORS           =   list(human=AA_PRIORS_HUMAN, yeast=AA_PRIORS_YEAST, fly=AA_PRIORS_FLY, mouse=AA_PRIORS_MOUSE,
                        worm=AA_PRIORS_WORM)
 
 
