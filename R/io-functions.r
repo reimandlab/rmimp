@@ -250,13 +250,16 @@
   } else if (domain %in% c("sh3", "sh2", "pdz")) {
     mdata = c('hconf'     = sprintf('%s_individual_%s_experimental.mimp', domain, species))
   }
+  else{
+    mdata = c()
+  }
   
   if(length(model.data) != 1 | !is.character(model.data)){ 
     cat('\n'); stop('model.data must be a character of length one')
   }
   
   custom.models = file.exists(model.data)
-  if(!model.data %in% names(mdata) & !custom.models){
+  if (!custom.models & !model.data %in% names(mdata)){
     # Automatically retrieve the possible valid options of model.data
     cat('\n'); stop(sprintf("model.data must be one of the following: %s, or a path to custom model.", paste0(names(mdata), collapse = ", ")))
   }

@@ -2,11 +2,11 @@
 % Please edit documentation in R/Rmimp.R
 \name{site_mimp}
 \alias{site_mimp}
-\title{Predict the impact of single variants on phosphorylation.}
+\title{Predict the impact of single variants on a PTM site.}
 \usage{
 site_mimp(muts, seqs, site_type = "phos", species = "human", sites = NULL,
-  terminal.range = 5, prob.thresh = 0.5, log2.thresh = 1,
-  display.results = T, include.cent = F, model.data = "hconf")
+  prob.thresh = 0.5, log2.thresh = 1, display.results = T,
+  include.cent = F, model.data = "hconf")
 }
 \arguments{
 \item{muts}{Mutation data file: a space delimited text file OR data frame containing two columns (1) gene and (1) mutation.
@@ -21,6 +21,13 @@ Example:
 named list of sequences where each list element is the uppercase sequence and the
 name of each element is that of the protein. Example: list(GENEA="ARNDGH", GENEB="YVRRHS")}
 
+\item{sites}{PTM sites data file: a space delimited text file OR data frame containing  two columns (1) gene and (1) positions of PTM sites. Example:
+\tabular{ll}{
+   TP53 \tab 280\cr
+   CTNNB1 \tab 29\cr
+   CTNNB1 \tab 44\cr
+}}
+
 \item{prob.thresh}{Probability threshold of gains and losses. This value should be between 0.5 and 1.}
 
 \item{log2.thresh}{Threshold for the absolute value of log ratio between wild type and mutant scores. Anything less than this value is discarded (default: 1).}
@@ -30,13 +37,6 @@ name of each element is that of the protein. Example: list(GENEA="ARNDGH", GENEB
 \item{include.cent}{If TRUE, gains and losses caused by mutation in the central STY residue are kept. Scores of peptides with a non-STY central residue is given a score of 0 (default: FALSE).}
 
 \item{model.data}{Name of specificity model data to use, can be "hconf" : individual experimental kinase specificity models used to scan for rewiring events. For experimental kinase specificity models, grouped by family, set to "hconf-fam". Both are considered high confidence. For lower confidence predicted specificity models , set to "lconf". NOTE: Predicted models are purely speculative and should be used with caution}
-
-\item{psites}{Phosphorylation data file: a space delimited text file OR data frame containing  two columns (1) gene and (1) positions of phosphorylation sites. Example:
-\tabular{ll}{
-   TP53 \tab 280\cr
-   CTNNB1 \tab 29\cr
-   CTNNB1 \tab 44\cr
-}}
 }
 \value{
 The data is returned in a \code{data.frame} with the following columns:
@@ -56,8 +56,8 @@ The data is returned in a \code{data.frame} with the following columns:
 \item{effect}{Type of rewiring event, can be "loss" or "gain"}
 }
 \description{
-This function takes in mutation, sequence and phosphorylation data to predict the
-impact the mutation has on phosphorylation.
+This function takes in mutation, sequence and PTM data to predict the
+impact the mutation has on the post-translational modification.
 }
 \examples{
 # Get the path to example mutation data
@@ -81,8 +81,8 @@ head(results)
 \keyword{mimp}
 \keyword{mutation}
 \keyword{phosphorylation}
-\keyword{psites}
 \keyword{pwm}
 \keyword{rewiring}
+\keyword{sites}
 \keyword{snp}
 \keyword{snv}

@@ -4,7 +4,7 @@
 \alias{get_domain_mut_sites}
 \title{Helper function for domain mimp}
 \usage{
-get_domain_mut_sites(md, seqdata, mdata, flank)
+get_domain_mut_sites(data, mdata, flank)
 }
 \description{
 Helper function for domain mimp

@@ -79,10 +79,10 @@ unfactor <- function(df){
   bg_gmm = suppressWarnings(Mclust(neg))
 
   # and parameters for the models
-  fg_params = .getParams(fg_gmm)
-  bg_params = .getParams(bg_gmm)
+  fg.params = .getParams(fg_gmm)
+  bg.params = .getParams(bg_gmm)
 
-  list(fg_params=fg_params, bg_params=bg_params)
+  list(fg.params = fg.params, bg.params = bg.params)
 }
 
 #' Calculate AUC from positive and negitive seqeunces of one binding site
@@ -375,6 +375,7 @@ tSNVs <- function(md, seqdata, terminal) {
 #' 
 #' @import GenomicRanges
 #' @importFrom IRanges IRanges
+#' @importFrom S4Vectors to
 #' @examples
 #' # No examples
 pSNVs <- function(md, pd, seqdata, flank=7){
@@ -396,8 +397,8 @@ pSNVs <- function(md, pd, seqdata, flank=7){
     pd2$mt = pd2$wt = pd2$seq
   }
   
-  df = cbind(pd2[subjectHits(ol),], md[queryHits(ol),])
-  df$start = start(ps_gr[subjectHits(ol)])
+  df = cbind(pd2[S4Vectors::to(ol),], md[S4Vectors::to(ol),])
+  df$start = start(ps_gr[S4Vectors::to(ol)])
   df$psite_pos = df$pos
   df$mut_dist = df$mut_pos - df$pos
   
@@ -686,7 +687,7 @@ computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.th
   
   # Predict
   predicted <- mapply(function(wt, mut, name, loc) {
-    res = pRewiringPosterior(wt, mut, obj$fg_params, obj$bg_params, obj$auc)
+    res = pRewiringPosterior(wt, mut, obj$fg.params, obj$bg.params, obj$auc)
     log2 <- log2(wt/mut)
     # Filter by probability threshold
     ind = res$ploss >= prob.thresh | res$pgain >= prob.thresh
@@ -725,13 +726,13 @@ computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.th
 }
 
 
-bi_argument_identity <- function(a, b) {
-    c(a, b)
+no_filter <- function(a, b) {
+  list(seqdata = a, md = b)
 }
 #' Raw mimp
 .mimp <- function(
   muts, seqs, model_path_object, get_mutated_sites, score_closure,
-  description='', filter=bi_argument_identity, display.results=T,
+  description='', filter=no_filter, display.results=T,
   domain='phos'
 ){
   # Constant, don't change
@@ -741,7 +742,9 @@ bi_argument_identity <- function(a, b) {
   seqdata = .readSequenceData(seqs)
   md = .readMutationData(muts, seqdata)
   
-  list[seqdata, md] = filter(seqdata, md)
+  filtered_data = filter(seqdata, md)
+  seqdata = filtered_data$seqdata
+  md = filtered_data$md
   
   # Validate that mutations map to the correct residue
   .validateMutationMapping(md, seqdata)
@@ -758,7 +761,7 @@ bi_argument_identity <- function(a, b) {
   mdata = readRDS(model_path_object$path)
   cat('\rdone\n')
   
-  mut_sites = get_mutated_sites(md, seqdata, mdata, flank)
+  mut_sites = get_mutated_sites(filtered_data, mdata, flank)
   
   # If no mutations map, throw warning and return NULL
   if (length(mut_sites) == 0) {
@@ -769,7 +772,6 @@ bi_argument_identity <- function(a, b) {
   message('Computing ', description)
   
   scoring_function = score_closure(mdata, mut_sites)
-  
   scored <- if (requireNamespace("pbapply", quietly = TRUE)) {
     pbapply::pblapply(1:length(mdata), scoring_function)
   } else {
@@ -906,12 +908,12 @@ site_mimp <- function(muts, seqs, site_type="phos", species="human",
       .validatePsitesSTY(sites_data, seqdata)
     }
     
-    c(seqdata, md)
+    list(seqdata = seqdata, md = md, sites = sites_data)
   }
   
-  get_mut_sites <- function(md, seqdata, mdata, flank) {
+  get_mut_sites <- function(data, mdata, flank) {
     # Get mutations in flanking regions of sites
-    mut_sites = pSNVs(md, sites_data, seqdata, flank)
+    mut_sites = pSNVs(data$md, data$sites, data$seqdata, flank)
     # Are we keeping central residues?
     if (!include.cent) mut_sites = mut_sites[mut_sites$mut_dist != 0,]
     mut_sites
@@ -926,10 +928,16 @@ site_mimp <- function(muts, seqs, site_type="phos", species="human",
     }
     return(score)
   }
+  if (site_type %in% .DESCRIPTIONS) {
+    description = .DESCRIPTIONS[site_type]
+  }
+  else {
+    description = paste0('PTM site: ', site_type)
+  }
   
   .mimp(
     muts, seqs, path_object, get_mut_sites, score_closure,
-    description = .DESCRIPTIONS[site_type], filter = filter,
+    description = description, filter = filter,
     display.results = display.results
   )
 }
@@ -937,10 +945,10 @@ site_mimp <- function(muts, seqs, site_type="phos", species="human",
 #' Helper function for domain mimp
 terminal_mut_sites_getter = function(terminal.range)
 {
-  get_terminal_domain_mut_sites = function(md, seqdata, mdata, flank){
+  get_terminal_domain_mut_sites = function(data, mdata, flank){
       # Get wt and mut sequences
       pwms <- lapply(mdata, function(obj) return(obj$pwm))
-      mut_sites <- lapply(terminal.range, tSNVs, md = md, seqdata = seqdata)
+      mut_sites <- lapply(terminal.range, tSNVs, md = data$md, seqdata = data$seqdata)
       names(mut_sites) <- terminal.range
       mut_sites
   }
@@ -948,11 +956,11 @@ terminal_mut_sites_getter = function(terminal.range)
 }
 
 #' Helper function for domain mimp
-get_domain_mut_sites = function(md, seqdata, mdata, flank) {
+get_domain_mut_sites = function(data, mdata, flank) {
     # Get wt and mut sequences
     pwms <- lapply(mdata, function(obj) return(obj$pwm))
     flank <- unique(unlist(sapply(pwms, ncol), use.names = F))
-    mut_sites <- lapply(flank, SNVs, md = md, seqdata = seqdata)
+    mut_sites <- lapply(flank, SNVs, md = data$md, seqdata = data$seqdata)
     names(mut_sites) <- flank
     mut_sites
 }

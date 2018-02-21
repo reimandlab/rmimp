@@ -6,7 +6,7 @@
 \usage{
 domain_mimp(muts, seqs, domain = "sh2", species = "human",
   terminal.range = 5, prob.thresh = 0.5, log2.thresh = 1,
-  display.results = T, include.cent = F, model.data = "hconf")
+  display.results = T, model.data = "hconf")
 }
 \arguments{
 \item{muts}{Mutation data file: a space delimited text file OR data frame containing two columns (1) gene and (1) mutation.
@@ -30,8 +30,6 @@ name of each element is that of the protein. Example: list(GENEA="ARNDGH", GENEB
 \item{log2.thresh}{Threshold for the absolute value of log ratio between wild type and mutant scores. Anything less than this value is discarded (default: 1).}
 
 \item{display.results}{If TRUE results are visualised in an html document after analysis is complete}
-
-\item{include.cent}{If TRUE, gains and losses caused by mutation in the central STY residue are kept. Scores of peptides with a non-STY central residue is given a score of 0 (default: FALSE).}
 
 \item{model.data}{Name of specificity model data to use, can be "hconf" : individual experimental kinase specificity models used to scan for rewiring events. For experimental kinase specificity models, grouped by family, set to "hconf-fam". Both are considered high confidence. For lower confidence predicted specificity models , set to "lconf". NOTE: Predicted models are purely speculative and should be used with caution}
 }
