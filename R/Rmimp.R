@@ -91,7 +91,7 @@ unfactor <- function(df){
 #' @param kinase.domain Whether the domain to be trained is a kinase domain.
 #' @return AUC calculated
 #' @noRd
-.calculateAUC <- function(pos.seqs, neg.seqs, kinase.domain = F, priors) {
+.calculateAUC <- function(pos.seqs, neg.seqs, kinase.domain = F, priors, residues_groups) {
     # Calcuate the average AUC
     auc <- mean(sapply(suppressWarnings(split(pos.seqs, 1:ifelse(length(pos.seqs) >= 10, 10, length(pos.seqs)))), 
                        function(testset) {
@@ -99,9 +99,9 @@ unfactor <- function(df){
       remaining <- setdiff(pos.seqs, testset)
       pwm <- PWM(remaining, is.kinase.pwm = F, priors = priors, do.pseudocounts = T)
       
-      # Score the testset and negative seqs with the PWM
-      pos.scores <- unlist(mss(testset, pwm, kinase.domain = kinase.domain))
-      neg.scores <- unlist(mss(neg.seqs, pwm, kinase.domain = kinase.domain))
+      # Score the test set and negative seqs with the PWM
+      pos.scores <- unlist(mss(testset, pwm, kinase.domain = kinase.domain, residues_groups = residues_groups))
+      neg.scores <- unlist(mss(neg.seqs, pwm, kinase.domain = kinase.domain, residues_groups = residues_groups))
       
       # Calculate and return the AUC
       pred <- prediction(c(pos.scores, neg.scores), c(rep(1, length(pos.scores)), rep(0, length(neg.scores))))
@@ -161,6 +161,12 @@ trainModel <- function(pos.dir, neg.dir, kinase.domain = F,
   pos.files <- list.files(pos.dir, full.names = T)
   neg.files <- list.files(neg.dir, full.names = T)
   
+  if(length(pos.files) == 0 | length(neg.files) == 0)
+  {
+    warning("No files to build the model from.")
+    return(NULL)
+  }
+
   # Train model
   model <- clusterMap(cluster, function(pos.file, neg.file) {
     # Get positive and negative sequences and binding site
@@ -211,11 +217,11 @@ trainModel <- function(pos.dir, neg.dir, kinase.domain = F,
     
     # Calculate Bayesian foreground and background parameters
     params <- .fgBgParams(pos.scores, neg.scores)
-    params$pwm_name <- binding.site
+    params$name <- binding.site
     params$pwm <- pwm
     
     # Calculate AUC
-    auc <- .calculateAUC(pos.seqs, neg.seqs, kinase.domain, priors)
+    auc <- .calculateAUC(pos.seqs, neg.seqs, kinase.domain, priors, residues_groups = residues_groups)
     params$auc <- auc
     
     # Check if AUC is bigger than AUC threshold
@@ -228,7 +234,7 @@ trainModel <- function(pos.dir, neg.dir, kinase.domain = F,
     return(params)
   }, pos.files, neg.files, USE.NAMES = F, SIMPLIFY = F)
   
-  names(model) <- sapply(model, "[[", "pwm_name")
+  names(model) <- sapply(model, "[[", "name")
   model <- model[!sapply(model, is.null)]
   
   cat("\rdone | Training model. \n")
@@ -376,6 +382,7 @@ tSNVs <- function(md, seqdata, terminal) {
 #' @import GenomicRanges
 #' @importFrom IRanges IRanges
 #' @importFrom S4Vectors to
+#' @importFrom S4Vectors from
 #' @examples
 #' # No examples
 pSNVs <- function(md, pd, seqdata, flank=7){
@@ -397,8 +404,8 @@ pSNVs <- function(md, pd, seqdata, flank=7){
     pd2$mt = pd2$wt = pd2$seq
   }
   
-  df = cbind(pd2[S4Vectors::to(ol),], md[S4Vectors::to(ol),])
-  df$start = start(ps_gr[S4Vectors::to(ol)])
+  df = cbind(pd2[to(ol),], md[from(ol),])
+  df$start = start(ps_gr[to(ol)])
   df$psite_pos = df$pos
   df$mut_dist = df$mut_pos - df$pos
   
@@ -597,15 +604,16 @@ scoreWTSequence <- function(wt_seqs, central = T, domain = "phos", species = "hu
 #' 
 #' @keywords internal mut psites score snp snv
 computeRewiring <- function(obj, mut_ps, prob.thresh=0.5, log2.thresh=1, include.cent=F, 
-                            degenerate.pwms=F, .degenerate.groups=c('DE','KR','ILMV')){
-  
+                            degenerate.pwms=F, .degenerate.groups=c('DE','KR','ILMV'),
+                            residues_groups = c('S|T', 'Y')){
+
   # Score wild type and mutant sequences
   pwm = obj$pwm
 
   # make PWM degenerate if needed
   if(degenerate.pwms) pwm = degeneratePWM(pwm, .degenerate.groups)
-  mut_ps$score_wt = mss(mut_ps$wt, pwm)
-  mut_ps$score_mt = mss(mut_ps$mt, pwm)
+  mut_ps$score_wt = mss(mut_ps$wt, pwm, residues_groups = residues_groups)
+  mut_ps$score_mt = mss(mut_ps$mt, pwm, residues_groups = residues_groups)
   
   # Remove cases where wt and mt are NA
   #mut_ps = mut_ps[!(is.na(mut_ps$score_wt) & is.na(mut_ps$score_mt)),]
@@ -665,7 +673,7 @@ computeRewiring <- function(obj, mut_ps, prob.thresh=0.5, log2.thresh=1, include
 computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.thresh = 1) {
   # Get wt and mut sequences and pwms
   pwm <- as.matrix(obj$pwm)
-  pwm_name <- obj$pwm_name
+  name <- obj$name
   mutNames <- colnames(mut_ss)
   wtSeqs <- as.character(mut_ss[1,])
   mutSeqs <- as.character(mut_ss[2,])
@@ -710,7 +718,7 @@ computeBinding <- function(obj, mut_ss, mut_location, prob.thresh = 0.5, log2.th
   
   # Format the predicted
   predicted <- do.call("rbind", predicted[!sapply(predicted, is.null)])
-  predicted <- cbind(predicted, pwm_name)
+  predicted <- cbind(predicted, name)
   colnames(predicted) <- c("gene", "mut", "wt", "mt", "score_wt", "score_mt", "log_ratio", "ploss", "pgain", "pwm")
   
   # Set the effect
@@ -758,6 +766,8 @@ no_filter <- function(a, b) {
   # Get data
   cat('\r.... | loading specificity models')
   model.data = model_path_object$id
+  print('Reading:')
+  print(model_path_object$path)
   mdata = readRDS(model_path_object$path)
   cat('\rdone\n')
   
@@ -880,7 +890,9 @@ no_filter <- function(a, b) {
 #' 
 site_mimp <- function(muts, seqs, site_type="phos", species="human",
                       sites=NULL, prob.thresh=0.5, log2.thresh=1,
-                      display.results=T, include.cent=F, model.data='hconf'){
+                      display.results=T, include.cent=F, model.data='hconf',
+                      residues_groups = c('S|T', 'Y')
+                      ){
   .ensure_valid_thresholds(prob.thresh)
   
   if (species != "human") {
@@ -919,12 +931,11 @@ site_mimp <- function(muts, seqs, site_type="phos", species="human",
     mut_sites
   }
   
-  
   score_closure = function(mdata, mut_sites)
   {
     score <- function(i) {
       obj = mdata[[i]]
-      computeRewiring(obj, mut_sites, prob.thresh, log2.thresh, include.cent)
+      computeRewiring(obj, mut_sites, prob.thresh, log2.thresh, include.cent, residues_groups = residues_groups)
     }
     return(score)
   }
@@ -1049,7 +1060,7 @@ domain_mimp <- function(muts, seqs, domain="sh2", species="human",
     score = function(i){
       # Processing PWM i
       obj = mdata[[i]]
-      obj$pwm_name <- names(mdata[i]) 
+      obj$name <- names(mdata[i])
       pwm_ncol <- as.character(ncol(obj$pwm))
     
       # If terminal domains, mut locations are defined in the mut_sites

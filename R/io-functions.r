@@ -105,29 +105,30 @@
   DIG_REGEX = '^\\d+$'
   
   if(is.null(seqdata)){
+    cat('Using sequences from PSP')
     psp_path = file.path(BASE_DIR, 'psp_phosphosites.rds')
     psp = readRDS(psp_path)
     return(psp)
   }
   
-  # Do we have phosphorylation sites?
+  # Do we have sites?
   have.ps = !is.null(psites)
   
   if(have.ps){
     # Yes, read from file
     pd = psites
     if(!is.data.frame(pd) & !is.character(pd)){
-      stop('psites should be a path to the phosphorylation data file or a data.frame')
+      stop('psites should be a path to the sites data file or a data.frame')
     }
     
     if( is.character(psites) ){
       # Read in from path
-      msg = sprintf('reading phosphorylation sites file from %s', normalizePath(psites))
+      msg = sprintf('reading sites file from %s', normalizePath(psites))
       cat(sprintf('\r.... | %s', msg))
       pd = fread(psites, header=F, stringsAsFactors=F, data.table = F)
     }else{
       # Assume we have data frame passed in
-      msg = 'processing phosphorylation sites from data frame'
+      msg = 'processing sites from data frame'
       cat(sprintf('\r.... | %s', msg))
     }
     
@@ -142,7 +143,7 @@
     
   }else{
     
-    msg = 'no phosphorylation data found, generating potential phosphosites using all STY residues'
+    msg = 'no sites data found, generating potential phosphosites using all STY residues'
     cat(sprintf('\r.... | %s', msg))
     # No psite file, generate psites using all STYs
     sd_sp = strsplit(unlist(seqdata), '')

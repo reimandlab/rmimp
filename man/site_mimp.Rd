@@ -6,7 +6,7 @@
 \usage{
 site_mimp(muts, seqs, site_type = "phos", species = "human", sites = NULL,
   prob.thresh = 0.5, log2.thresh = 1, display.results = T,
-  include.cent = F, model.data = "hconf")
+  include.cent = F, model.data = "hconf", residues_groups = c("S|T", "Y"))
 }
 \arguments{
 \item{muts}{Mutation data file: a space delimited text file OR data frame containing two columns (1) gene and (1) mutation.

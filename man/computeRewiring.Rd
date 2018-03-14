@@ -6,7 +6,7 @@
 \usage{
 computeRewiring(obj, mut_ps, prob.thresh = 0.5, log2.thresh = 1,
   include.cent = F, degenerate.pwms = F, .degenerate.groups = c("DE",
-  "KR", "ILMV"))
+  "KR", "ILMV"), residues_groups = c("S|T", "Y"))
 }
 \arguments{
 \item{obj}{MIMP kinase object containing PWM, auc, GMM parameters, family name, etc.}

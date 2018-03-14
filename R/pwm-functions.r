@@ -282,7 +282,7 @@ mss <- function(seqs, pwm, na_rm=F, ignore_cent=T, kinase.domain = T, residues_g
       kinase_type = residue_group
     }
   }
-  
+
   central_res = kinase_type
   
   if (!ignore_cent)
