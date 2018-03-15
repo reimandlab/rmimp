@@ -166,7 +166,6 @@ trainModel <- function(pos.dir, neg.dir, kinase.domain = F,
     warning("No files to build the model from.")
     return(NULL)
   }
-
   # Train model
   model <- clusterMap(cluster, function(pos.file, neg.file) {
     # Get positive and negative sequences and binding site
@@ -769,6 +768,10 @@ no_filter <- function(a, b) {
   print('Reading:')
   print(model_path_object$path)
   mdata = readRDS(model_path_object$path)
+  if (length(mdata) == 0) {
+    warning('Chosen model is empty!')
+    return(NULL)
+  }
   cat('\rdone\n')
   
   mut_sites = get_mutated_sites(filtered_data, mdata, flank)
