@@ -152,7 +152,8 @@ trainModel <- function(pos.dir, neg.dir, kinase.domain = F,
   
   # Initiate parallel processes
   cluster <- makeCluster(cores)
-  clusterExport(cluster, ls(all.names = T, envir = .GlobalEnv), envir = .GlobalEnv)
+
+  invisible(clusterEvalQ(cluster, library(rmimp)))
   invisible(clusterEvalQ(cluster, library(ROCR)))
   invisible(clusterEvalQ(cluster, library(mclust)))
   on.exit(stopCluster(cluster))
